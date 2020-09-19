@@ -205,6 +205,50 @@ rea <- X[251:(length(X[,1])),]   # rea (realised - out-of-sample)
 X<-X[1:(nrow(X)-1),] #Matrix of returns up to (n-1)
 
 
+```
 
+### Estimations
+
+We apply rolling estimations in parallel over the simulated returns (X)
+
+```{r Estimating models2, eval=FALSE, echo=TRUE}
+
+
+  copies_of_r <- 20 
+  cl <- makeCluster(copies_of_r)
+  clusterExport(cl, c("GQML_f","NGQML_f","ugarchfit","ugarchspec","gosolnp","Rank_f",
+                      "Prem_f1", "lsqnonlin", "fmincon", "f_ZeQ","HZ","w", "stQML_f",
+                      "GED_f", "rollapply","Rank_B",".gl","fitdist","VaRf"))
+   clusterEvalQ(cl, library(rugarch))
+   
+   tic()
+   NG<-parApply(cl, X, 2,function(X)(rollapply(X, w,function(X)(VaRf(NGQML_f(X),X, "std")))))
+   toc()
+   
+   tic()
+   ST<-parApply(cl, X, 2,function(X)(rollapply(X, w,function(X)(VaRf(stQML_f(X),X, "std")))))
+   toc()
+     
+   tic()
+   G<-parApply(cl, X, 2,function(X)(rollapply(X, w,function(X)(VaRf(GQML_f(X),X, "norm")))))
+   toc()
+   
+   tic()
+   GED<-parApply(cl, X, 2,function(X)(rollapply(X, w,function(X)(VaRf(GED_f(X),X, "ged")))))
+   toc()
+
+   tic()
+   Rank<-parApply(cl, X, 2,function(X)(rollapply(X, w,function(X)(VaRf(Rank_f(X),X, "std")))))
+   toc()
+   
+   tic()
+   RankB<-parApply(cl, X, 2,function(X)(rollapply(X, w,function(X)(VaRf(Rank_B(X),X, "std")))))
+   toc()
+   
+   tic()
+   Prem<-parApply(cl, X, 2,function(X)(rollapply(X, w,function(X)(VaRf(Prem_f1(X),X, "std")))))
+   toc()
+
+   stopCluster(cl)
 
 ```
