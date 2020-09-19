@@ -1,0 +1,219 @@
+---
+title: "Simulated VaR - Modeling Uncertainty in VaR"
+
+author: "Luis Fernando C Costa"
+
+date: "19/09/2020"
+
+output: github_document
+  
+---
+
+These codes perform the estimators used to obtain the GARCH (1,1) parameters, as well as calculate the VaR through parametric and Filtered Historical Simulation methods.  
+
+```{r packages, include=FALSE}
+library(rugarch)
+library(tictoc)
+library(parallel)
+library(Metrics)
+library(Rsolnp)
+library(fBasics)
+library(pracma)
+library(PerformanceAnalytics)
+library(zoo)
+library(quantmod)
+library(resample)
+library(gdata)
+library(NlcOptim)
+```
+### loading the estimators
+```{r loading estimators}
+
+source("Estimators-Modeling-Uncertainty-in-VaR.r")
+
+```
+
+### VaR function 
+
+VaRf performs the one-step ahead Value-at-risk forecast
+Inputs:
+
+1. param is a vector with the estimated parameters (omega, alpha beta, shape) 
+ obtained through the estimators : GQML,STD, NG, Rank etc..
+2. X is the time series (returns).
+3. dis is the distribution. 
+
+The function returns a list with 10 elements:
+
+1. (from column 1 to 4) (VaRa) - parametric VaR with 0.05, 0.01, 0.005 and 0.001 risk level.
+2.  One-day-ahead conditional sd forecast (Fsigma)
+3.  The last observation of the standardized residuals (z): useful to estimate 
+the shape parameter.
+4. (from column 7 to 10) (VaRz) - FHS (Filtered historical simulation) VaR with 0.05,
+0.01, 0.005 and 0.001 risk level.
+
+```{r VaRf, echo=TRUE}
+
+VaRf<- function(param, X, dis) {
+  
+  
+  spec = ugarchspec(variance.model = list(model = "sGARCH"),
+                     mean.model=list(armaOrder=c(0,0), include.mean=FALSE),
+                     distribution.model = dis)
+  
+  spec@model[["fixed.pars"]]<-param
+  
+  #One-step-ahead cond. sd. forecast
+  
+  H<-ugarchforecast(spec, X, n.ahead = 1)
+  H_1<-as.numeric(H@forecast$sigmaFor)
+  sigma<-H@model[["modeldata"]][["sigma"]] #estimated conditional sd.
+  z<-X/sigma
+  
+  
+  #Estimating the shape parameter of a STD or a GED dist.
+  #We set shape=40 for a normal (it does not affect the normal VaR estimation)
+  
+  if(dis=="norm"){
+    shape=40
+  }else{
+    shape=spec@model[["fixed.pars"]][["shape"]]
+  }
+  
+  #Parametric VaR: 5%, 1%, 0.5% and 0.1% level of significance:
+  
+ # Considering the shape parameter estimated previously.
+  
+  VaR5a<-as.numeric(H_1*(qdist(distribution = dis, mu=0, sigma=1, 
+                        p=0.05, shape=shape)))
+  
+  VaR1a<-as.numeric(H_1*(qdist(distribution = dis, mu=0, sigma=1,
+                        p=0.01, shape=shape)))
+  
+  ans<-list(
+    
+    VaR5a=VaR5a,
+    
+    VaR1a=VaR1a,
+    
+    FSigma=H_1,
+    
+    )
+  
+  return(ans)
+  
+  }
+```
+
+### Simulated returns
+
+This function simulates a GARCH(1,1) process and returns.
+The inputs are: 
+
+1. n (number of observations - 3500 is fixed)
+2. no_simulations
+3. df=degrees of freedom (Student-t dist - min is 3)
+5. distribution of the processes innovations dis="std" or "ged".
+6. w=estimation window (we use 250, 500, 1000 and 2500)
+
+Besides these inputs it is necessary to inform the parameters previously: omega, alpha and beta.
+
+This function returns a list of 13 elements:
+
+1.  Simulated returns (R)
+2.  Simulated conditional standard deviation (V)
+3.  Simulated standardized residuals (Z)
+4.  Shape parameters of the simulations
+5.  VaR5a parametric -true VaR with alpha=0.05
+6.  VaR1a parametric true VaR with alpha=0.01
+7.  VaR5t parametric true VaR with alpha=0.005
+8.  VaR1t parametric true VaR with alpha=0.001
+9.  VaR5z empirical -true VaR with alpha=0.05
+10. VaR1z empirical true VaR with alpha=0.01
+11. VaR5tz empirical true VaR with alpha=0.005
+12. VaR1tz empirical true VaR with alpha=0.001
+13. rea - realized returns (the last 1000 observations of returns to evaluate the VaR)
+
+```{r Function Simulated Returns, echo=TRUE}
+
+
+returns<-function(n,no_simulations,df,dis){
+  
+ spec=ugarchspec(variance.model=list(model="sGARCH", garchOrder=c(1,1)),
+                  mean.model=list(armaOrder=c(0,0), include.mean=FALSE), 
+                  distribution.model=dis, fixed.pars=list(mu=0,
+                  omega=omega, alpha1=alpha, beta1=beta,  skew= sk, shape=df))
+  
+  path.sgarch = ugarchpath(spec, n.sim = n, n.start=1001,
+                m.sim = no_simulations, rseed = 42)#3   #3489 #rseed=589, 3478
+  
+  #Burn-in sample -> n.start=1001
+  
+  R<-path.sgarch@path[["seriesSim"]]
+  
+  V <- path.sgarch@path$sigmaSim
+  
+  out<-list(R = R, V = V )
+  
+  return(out)
+}
+# 0.01,0.09, 0.9 df3  seed 42
+# 0.01,0.09, 0.9 df7  seed 52
+# 0.01,0.1, 0.8 df3  seed 62
+# 0.01,0.1, 0.8 df7  seed 72
+
+```
+
+### Process setting
+```{r Process setting, echo=TRUE}
+
+omega<-0.01  
+alpha<-0.09 
+beta<-0.9 
+True_parameters<-c(omega, alpha, beta)
+dis="std"   # distribution 
+sk<-1 # 1 = no skewness 
+n <-3500 # is the number of observations(this number is fixed)
+no_simulations <-100
+df=3 # degrees of freedom 3 8 
+w<-1000 #estimation window (250, 500, 1000 and 2500)
+```
+
+### Simulating the processes 
+We use estimation window with length = "w" to forecast the 1000 next days, through a 1-step ahead rolling window scheme
+```{r Simulation, eval=FALSE, echo=TRUE}
+
+tic()
+data <- returns(n, no_simulations,df, dis)
+toc()
+out<-1000 # days ahead to forecast(fixed)
+ 
+#rea<-unlist(data$R[,]) # rea (realised - out-of-sample)
+3X<-R[1:(nrow(R)-1),] #Matrix of returns up to (n-1)
+
+
+#X1 = data$R
+```
+# Statistics
+```{r}
+
+S_series<-function(X){
+  
+  sts<-basicStats(X)
+  sts2<-matrix(unlist(sts), ncol=ncol(X), nrow=16)
+  sts3<-rowMeans(sts2)
+  sts4<-rowMaxs(sts2)
+  sts5<-rowMins(sts2)
+  
+  STS<-rbind(sts4, sts3, sts5)
+  
+  colnames(STS)<-rownames(sts)
+  rownames(STS)<-c("Max.", 'Mean', "Min.")
+  
+  STS<- format(round(STS,3),nsmall = 3, scientific = FALSE)
+  STS<-STS[,c(3:8, 14:16)]
+  return(STS)
+  
+}
+
+```
