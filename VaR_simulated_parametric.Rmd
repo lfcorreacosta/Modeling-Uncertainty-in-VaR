@@ -176,7 +176,7 @@ sk<-1 # 1 = no skewness
 n <-3500 # is the number of observations(this number is fixed)
 no_simulations <-100
 df=3 # degrees of freedom 3 8 
-w<-1000 #estimation window (250, 500, 1000 and 2500)
+w<-250 #estimation window (250, 500, 1000 and 2500)
 ```
 
 ### Simulating the processes 
@@ -190,7 +190,21 @@ out<-1000 # days ahead to forecast(fixed)
  
 #rea<-unlist(data$R[,]) # rea (realised - out-of-sample)
 #X<-R[1:(nrow(R)-1),] #Matrix of returns up to (n-1)
-
-
 #X1 = data$R
+```
+
+### Defining the estimation window
+```{r Defining the estimation window, eval=FALSE, echo=TRUE}
+
+w = 250 # 250, 500, 1000, 2500
+
+X <- data$R[2251:3500,]
+
+rea <- X[251:(length(X[,1])),]   # rea (realised - out-of-sample)
+
+X<-X[1:(nrow(X)-1),] #Matrix of returns up to (n-1)
+
+
+
+
 ```
