@@ -189,31 +189,8 @@ toc()
 out<-1000 # days ahead to forecast(fixed)
  
 #rea<-unlist(data$R[,]) # rea (realised - out-of-sample)
-3X<-R[1:(nrow(R)-1),] #Matrix of returns up to (n-1)
+#X<-R[1:(nrow(R)-1),] #Matrix of returns up to (n-1)
 
 
 #X1 = data$R
-```
-# Statistics
-```{r}
-
-S_series<-function(X){
-  
-  sts<-basicStats(X)
-  sts2<-matrix(unlist(sts), ncol=ncol(X), nrow=16)
-  sts3<-rowMeans(sts2)
-  sts4<-rowMaxs(sts2)
-  sts5<-rowMins(sts2)
-  
-  STS<-rbind(sts4, sts3, sts5)
-  
-  colnames(STS)<-rownames(sts)
-  rownames(STS)<-c("Max.", 'Mean', "Min.")
-  
-  STS<- format(round(STS,3),nsmall = 3, scientific = FALSE)
-  STS<-STS[,c(3:8, 14:16)]
-  return(STS)
-  
-}
-
 ```
