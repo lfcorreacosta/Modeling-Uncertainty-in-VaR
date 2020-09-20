@@ -214,7 +214,7 @@ We apply rolling estimations in parallel over the simulated returns (X)
 ```{r Estimating models2, eval=FALSE, echo=TRUE}
 
 
-  copies_of_r <- 20 
+  copies_of_r <- 32 
   cl <- makeCluster(copies_of_r)
   clusterExport(cl, c("GQML_f","NGQML_f","ugarchfit","ugarchspec","gosolnp","Rank_f",
                       "Prem_f1", "lsqnonlin", "fmincon", "f_ZeQ","HZ","w", "stQML_f",
