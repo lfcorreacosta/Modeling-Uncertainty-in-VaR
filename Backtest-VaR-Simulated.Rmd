@@ -1,0 +1,297 @@
+---
+title: "Backtesting VaR"
+author: "Luis Fernando C Costa"
+date: "20/09/2020"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(GAS)
+library(rugarch)
+library(kableExtra)
+```
+
+### Series statistics 
+```{r}
+
+
+S_series<-function(X){
+  
+  sts<-fBasics::basicStats(X)
+  sts2<-matrix(unlist(sts), ncol=ncol(X), nrow=16)
+  sts3<-rowMeans(sts2)
+  sts4<-fBasics::rowMaxs(sts2)
+  sts5<-fBasics::rowMins(sts2)
+  
+  STS<-rbind(sts4, sts3, sts5)
+  
+  colnames(STS)<-rownames(sts)
+  
+  STS<- format(round(STS,3),nsmall = 3, scientific = FALSE)
+  STS<-STS[,c(3:8, 14:16)]
+  return(STS)
+  
+}
+
+S_series(X)
+
+S_series(tail(X, 1000))
+
+
+```
+All estimates obtained previously are stored in the Estimators list, they are: G, ST, GED, NG, Rank, RankB and Prem. These estimators are sublists of the Estimators list, which in turn contain the output of the 100 simulated processes. Moreover, each of the 100 simulations are also a single list that stores a 1000*10 matrix. The columns of this matrix are the predicted parametric VaR for 5%, 1%, 0.05% and 0.1% risk levels (from columns 1 to 5), the standardised residuals (column 6), the predicted conditional standard deviation (columns 7) and the FHS VaR for 5%, 1%, 0.05% and 0.1% risk levels (from columns 7 to 10).
+
+The next functions are tools to extract all information within the Estimators lists, which are used in the next steps to perform the backtesting analysis, such as the conditional and unconditional coverage VaR test, the Loss Average quantile loss function, the ratio of realised to expected exceedances, and  the mean (ADmean) and the maximum absolute deviation (Amax) of the violations from the VaR forecast.
+
+```{r FHS VaR forecast function, eval=FALSE, include=FALSE}
+
+#setwd("C:/Users/Luis/OneDrive - Universidade do Minho/PhD 2020/GARCH Empirical/2 round data basis")
+
+
+#1) Extract the columns with 
+
+Estimators<-list(G=G, ST=ST, GED=GED, NG=NG, Rank=Rank, RankB=RankB, Prem=Prem)
+rm(G, ST, GED,NG, Rank, RankB, Prem)
+```
+
+## Unlist function
+
+This function allows for unlisting VaR forecasts obtained through the proposed estimators
+
+```{r}
+
+no_simulations = length(Estimators$G)
+
+unl <- function(est, n){
+  
+  mat=matrix(0, ncol = no_simulations, nrow = nrow(est[[1]]) ) 
+  
+  for (i in 1:ncol(mat)) {
+    
+    mat[,i]<-unlist(est[[i]][,n])
+    
+  }
+  return(mat)
+}
+
+
+```
+
+
+### VaR forecast extraction function
+
+VaRF extracts the vectors of the required variable (m), wrapping up the series of all estimators in one single list. Here, m is defined according to the interested variable as described previously. For instance, if it is required the parametric 5% VaR, m has to be set to 1.
+
+```{r FHS VaR forecast function, echo=TRUE}
+VaRE<-function(Estimators, m){
+  
+ans<-list(  
+  
+VaR_G=unl(Estimators[[1]],m),
+VaR_st=unl(Estimators[[2]],m),
+VaR_GED=unl(Estimators[[3]],m),
+VaR_NG=unl(Estimators[[4]],m),
+VaR_Rank=unl(Estimators[[5]],m),
+VaR_RankB=unl(Estimators[[6]],m),
+VaR_P=unl(Estimators[[7]],m)
+
+)
+  return(ans)
+  
+}
+
+
+
+```
+
+# Backtesting session 1
+
+### Backtest function 
+
+The Backtest function uses the actual returns (rea), the estimated VaR and the level of significance as inputs, and returns the following items (performed through GAS packages):
+
+1. LRuc The unconditional coverage test of Kupiec (1995) - P-value.
+2. LRcc The conditional coverage test of Christoffesen (1998) - P-value.
+3. DQ The Dynamic Quantile test of Engle and Manganelli (2004) - P-value.
+4. Loss Average quantile loss and quantile loss series as in Gonzalez-Rivera et al. (2004).
+5. Actual over Expected exceedance ratio.
+
+```{r Backtest function , echo=TRUE}
+
+BK<-function(rea, VaR, alpha){
+  
+BBg1<-BacktestVaR(rea, VaR, alpha = alpha)
+
+ans<-c(BBg1$LRuc[[2]], BBg1$LRcc[[2]], BBg1$DQ[[2]], BBg1$Loss[[1]], BBg1$AE)
+
+names(ans)<-c("LRuc", "LRcc", "DQ","mean AQLF","Prop exc")
+
+return(ans)
+}
+
+
+```
+
+### Backtest analysis function.
+
+The Backtest function (previous function) is designed to evaluate one series per time. On the other hand, the Backtest analysis function evaluates multiple series, i.e., from either simulated process or multiple stocks returns.
+
+The inputs are the same the Backtest function (actual returns (rea), VaR, level of significance).
+
+The outputs (6 columns) are: 
+
+1. Tests (columns 1 to 3): LRuc, LRcc, DQ indicates the proportion of rejections to the total number of simulations. The higher these ratios the higher the number of rejections; 
+4. ADQLF : is the mean of the loss function.
+5. Mean exceed: is the average of the ratio of actual exceedances to the expected ones.
+The closer to 1 the more accurate the estimator; 
+6. SD exceed is the standard deviation of the actual exceedances to the expected ones.
+
+
+```{r Backtest analysis function, echo=TRUE}
+
+Backtest_analysis<-function(rea, VaR, alpha){
+  
+  M <-matrix(0, ncol=5, nrow = ncol(rea))
+  
+  for(i in 1:ncol(rea)){
+    
+    M[i,1:5]<-BK(rea[,i], VaR[,i], alpha=alpha)
+    
+  }
+  
+  ans<-matrix(0, ncol=5, nrow = ncol(rea))
+  
+  for (i in 1:ncol(rea)) {
+    ans[i,1]<-if(M[i,1]<alpha){ans[i,1]=1}else{ans[i,1]=0}
+    ans[i,2]<-if(M[i,2]<alpha){ans[i,2]=1}else{ans[i,2]=0}
+    ans[i,3]<-if(M[i,3]<alpha){ans[i,3]=1}else{ans[i,3]=0}
+    ans[i,4]<-M[i,4]*100
+    ans[i,5]<-M[i,5]
+  }
+  
+ resp<-c(colMeans(ans), sd(M[,5]))
+ names(resp)<-c("LRuc", "LRcc", "DQ","mean AQLF","Prop exc","sd Exc")
+
+ return(list(M,resp))
+}
+
+
+```
+### Backtest estimators
+
+This function applies the backtest function to the VaR obtained via multiple estimators.
+
+```{r Backtest estimators, echo=TRUE}
+
+
+obsen = as.numeric(length(Estimators[[1]])) # number of simulations
+
+BM<-function(VaR,p){
+  
+  
+  GQML <- unlist(Backtest_analysis(rea, matrix(unlist(VaR[["VaR_G"]][1:rou,]), 
+                                               ncol=obsen, nrow = rou), p)[2])
+  
+  STD <- unlist(Backtest_analysis(rea, matrix(unlist(VaR[["VaR_st"]][1:rou,]),
+                                              ncol=obsen, nrow = rou), p)[2])
+  
+  GED <- unlist(Backtest_analysis(rea, matrix(unlist(VaR[["VaR_GED"]][1:rou,]),
+                                              ncol=obsen, nrow = rou), p)[2])
+  
+  NGQML<- unlist(Backtest_analysis(rea, matrix(unlist(VaR[["VaR_NG"]][1:rou,]),
+                                               ncol=obsen, nrow = rou), p)[2])
+  
+  Rank<- unlist(Backtest_analysis(rea, matrix(unlist(VaR[["VaR_Rank"]][1:rou,]), 
+                                              ncol=obsen, nrow = rou), p)[2])
+  
+  RankB<- unlist(Backtest_analysis(rea, matrix(unlist(VaR[["VaR_RankB"]][1:rou,]), 
+                                               ncol=obsen, nrow = rou), p)[2])
+  
+  Prem<- unlist(Backtest_analysis(rea, matrix(unlist(VaR[["VaR_P"]][1:rou,]),
+                                              ncol=obsen, nrow = rou), p)[2])
+  
+  
+ BT<-(rbind(GQML, STD, GED, NGQML, Rank, RankB, Prem))
+ 
+ BT<- format(round(BT,4),nsmall = 4, scientific = FALSE)
+
+
+ reg<-array(0, 7)
+ col<-as.numeric(BT[,5])
+ for (i in 1:7) {
+   reg[i]<-abs((col[i]-1)/1)
+   
+ }
+ 
+ 
+ BT<-cbind(BT, reg)
+ #ans<-BT[order(BT[,7]),]
+ ans<-(BT[,1:6])
+ 
+  
+  
+  
+  colnames(ans)<-c("LRuc", "LRcc", "DQ","Mean AQLF","Mean exceed", "SD exceed" )
+  
+  return(ans)
+  
+}
+
+```
+
+# Application
+
+### Parametric VaR forecast
+
+Extraction of parametric VaR forecast with risk levels: 5%, 1%, 0.5% and 0.1%
+
+```{r Param VaR forecast, eval=FALSE, echo=TRUE}
+
+VaR5P<-VaRE(Estimators=Estimators,1)
+VaR1P<-VaRE(Estimators=Estimators,2)
+
+
+```
+
+### Parametric Backtest apply
+```{r Param Backtesting VaR, eval=FALSE, echo=TRUE}
+
+# Applying BM with different risk levels:
+
+rou = 1000 # rou is the out-of-sample legth
+BM5P<-BM(VaR5P, 0.05)
+BM1P<-BM(VaR1P, 0.01)
+
+
+```
+
+### VaR tables
+
+Tales of results
+
+```{r FHS VaR forecast, eval=FALSE, echo=TRUE}
+
+models <- row.names(BM1P)
+
+VaR5t <- cbind(models, BM5P[, c(5, 1:3)])
+colnames(VaR5t) <- c("estimator", "A/E", colnames(VaR5t[,3:5]))
+rownames(VaR5t) <- NULL
+
+
+VaR1t <- cbind(models, BM1P[, c(5, 1:3)])
+colnames(VaR1t) <- c("estimator", "A/E", colnames(VaR1t[,3:5]))
+rownames(VaR1t) <- NULL
+
+
+VaRT <- cbind(c(rep("",3), "VaR5",rep("",3), rep("",3), "VaR1",rep("",3)), rbind(VaR5t, VaR1t))
+
+kable(VaRT, caption = "VaR Backtesting of simulated processes", align = "c", booktabs = T)%>%
+kable_styling("striped") %>%
+pack_rows("", 1,7) %>%
+pack_rows("", 8,14) 
+
+
+```
+
+
