@@ -283,10 +283,11 @@ stQML_f<-function(X){
 
 ### Rank Estimator (Andrews, 2012)
 
-  ####################################################################
+  ##########################################################################################
   #Functions for estimating a GARCH(p,q) time series model R using ranks
   #Andrews (2012) 
-  ###################################################################
+  #see the original code at (https://faculty.wcas.northwestern.edu/~mea405/Rcode1.txt)
+  ###########################################################################################
   Rank_f<-function(X){
     
     w <- length(X)
